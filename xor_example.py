@@ -1,68 +1,100 @@
-# from https://neat-python.readthedocs.io/en/latest/xor_example.html
-"""
-2-input XOR example -- this is most likely the simplest possible example.
-"""
+import random 
+import torch 
+import numpy as np
+from classes.NEAT import *
+random.seed(14)
+torch.manual_seed(14)
+np.random.seed(14)
 
-import os
-
-import neat
-
-# 2-input XOR inputs and expected outputs.
-xor_inputs = [(0.0, 0.0), (0.0, 1.0), (1.0, 0.0), (1.0, 1.0)]
-xor_outputs = [(0.0,), (1.0,), (1.0,), (0.0,)]
+n_networks = 150
 
 
-def eval_genomes(genomes, config):
-    for genome_id, genome in genomes:
-        genome.fitness = 4.0
-        net = neat.nn.FeedForwardNetwork.create(genome, config)
-        for xi, xo in zip(xor_inputs, xor_outputs):
-            output = net.activate(xi)
-            genome.fitness -= (output[0] - xo[0]) ** 2
+# Fitness:
+c1 = 1
+c2 = 1
+c3 = 0.4
+distance_delta = 6
 
 
-def run(config_file):
-    # Load configuration.
-    config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
-                         config_file)
+weight_magnitude = 2.5 # std of weight mutation
+# Mutation
+mutate_weight_prob = 0.8
+mutate_weight_perturb = 0.8
+mutate_weight_random = 1 - mutate_weight_perturb
+mutate_add_node_prob = 0.02
+mutate_add_link_prob_large_pop = 0.08
+mutate_add_link_prob = 0.02
 
-    # Create the population, which is the top-level object for a NEAT run.
-    p = neat.Population(config)
+offspring_without_crossover = 0.25
+interspecies_mate_rate = 0.001
 
-    # Add a stdout reporter to show progress in the terminal.
-    p.add_reporter(neat.StdOutReporter(True))
-    stats = neat.StatisticsReporter()
-    p.add_reporter(stats)
-    p.add_reporter(neat.Checkpointer(5))
-
-    # Run for up to 300 generations.
-    winner = p.run(eval_genomes, 300)
-
-    # Display the winning genome.
-    print('\nBest genome:\n{!s}'.format(winner))
-
-    # Show output of the most fit genome against training data.
-    print('\nOutput:')
-    winner_net = neat.nn.FeedForwardNetwork.create(winner, config)
-    for xi, xo in zip(xor_inputs, xor_outputs):
-        output = winner_net.activate(xi)
-        print("input {!r}, expected output {!r}, got {!r}".format(xi, xo, output))
-
-    node_names = {-1: 'A', -2: 'B', 0: 'A XOR B'}
-    neat.visualize.draw_net(config, winner, True, node_names=node_names)
-    neat.visualize.draw_net(config, winner, True, node_names=node_names, prune_unused=True)
-    neat.visualize.plot_stats(stats, ylog=False, view=True)
-    neat.visualize.plot_species(stats, view=True)
-
-    p = neat.Checkpointer.restore_checkpoint('neat-checkpoint-4')
-    p.run(eval_genomes, 10)
+fitness_survival_rate = 0.2
+interspecies_mate_rate = 0.001
 
 
-if __name__ == '__main__':
-    # Determine path to configuration file. This path manipulation is
-    # here so that the script will run successfully regardless of the
-    # current working directory.
-    local_dir = os.path.dirname(__file__)
-    config_path = os.path.join(local_dir, 'config-feedforward')
-    run(config_path)
+node_gene_history = Node_Gene_History()
+connection_gene_history = Connection_Gene_History()
+
+genotypes = []
+
+
+for _ in range(n_networks):
+    node_genes = [
+        Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=0, initial_node_id=0), 
+        Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=0, initial_node_id=1),
+        Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=0, initial_node_id=2),
+        Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=1, initial_node_id=3)
+    ]
+    
+    connection_genes = [
+        Connection_Gene(0, 3, np.random.normal(), False, connection_gene_history), # bias
+        Connection_Gene(1, 3, np.random.normal(), False, connection_gene_history), # input 1 
+        Connection_Gene(2, 3, np.random.normal(), False, connection_gene_history), # input 2
+    ]
+    
+    genotype = Genotype(
+        node_genes, connection_genes, node_gene_history, connection_gene_history, 
+        mutate_weight_prob, mutate_weight_perturb, mutate_weight_random, mutate_add_node_prob, mutate_add_link_prob, weight_magnitude,
+        c1, c2, c3)
+    genotypes.append(genotype)
+
+# %%
+# xor
+inputs = [
+    {0:torch.tensor([1.0]),1:torch.tensor([0.0]),2:torch.tensor([0.0])},
+    {0:torch.tensor([1.0]),1:torch.tensor([1.0]),2:torch.tensor([0.0])},
+    {0:torch.tensor([1.0]),1:torch.tensor([0.0]),2:torch.tensor([1.0])},
+    {0:torch.tensor([1.0]),1:torch.tensor([1.0]),2:torch.tensor([1.0])}
+    # xor:
+    # bias 1, 00, 01, 10, 11
+]
+targets = [
+    torch.tensor([0.0]),
+    torch.tensor([1.0]),
+    torch.tensor([1.0]),
+    torch.tensor([0.0])
+]
+
+# %%
+len(genotypes)
+
+# %%
+
+initial_species = Species(np.random.choice(genotypes), genotypes, distance_delta)
+
+evolved_species, solutions = evolve(
+    features=inputs, 
+    target=targets, 
+    fitness_function=xor_fitness, 
+    stop_at_fitness=3.85, 
+    n_generations=1000,
+    species=[initial_species], 
+    fitness_survival_rate=fitness_survival_rate, 
+    interspecies_mate_rate=interspecies_mate_rate, 
+    distance_delta=distance_delta,
+    largest_species_linkadd_rate=mutate_add_link_prob_large_pop,
+    eliminate_species_after_n_generations=20
+    
+)
+
+print(solutions)
