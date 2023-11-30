@@ -176,10 +176,11 @@ class Genotype:
         for connection_gene in np.array(self.connection_genes)[mask]:
             if np.random.rand() < self.mutate_weight_perturb:
                 connection_gene.weight += np.random.normal() * self.weight_magnitude
+                
             else:
                 connection_gene.weight = np.random.normal() * self.weight_magnitude
-        
-     
+            # clip weight
+            connection_gene.weight = np.float32(np.clip(connection_gene.weight, -24, 24))
         
         # mutate add node
         if np.random.rand() < self.mutate_add_node_prob:
@@ -190,6 +191,7 @@ class Genotype:
             self.add_connection()
             
         # # mutate remove node
+        # technically we dont need it, since removing links is enough
         # if np.random.rand() < self.mutate_add_node_prob*0.6:
         #     self.remove_node()
         
@@ -197,33 +199,37 @@ class Genotype:
         if np.random.rand() < mutate_add_link_prob:
             self.remove_connection()
     
-    def remove_node(self):
-        # select a random node gene
-        if len(self.node_genes) == 0:
-            return
+    # def remove_node(self):
+    #     # select a random node gene
+    #     if len(self.node_genes) == 0:
+    #         return
+    #     candidate_node_genes = []
+    #     for gene in self.node_genes:
+    #         if gene.innovation_number not in [0,1,2,3]:
+    #             candidate_node_genes.append(gene)
+                
+    #     node_gene = np.random.choice(candidate_node_genes)
+    #     self.node_genes.remove(node_gene)
+    #     del self.node_genes_dict[node_gene.innovation_number]
         
-        node_gene = np.random.choice(self.node_genes)
-        self.node_genes.remove(node_gene)
-        del self.node_genes_dict[node_gene.innovation_number]
-        
-        # remove connection genes
-        # save the in and out node of the connection gene
-        in_nodes = []
-        out_nodes = []
-        for connection_gene in self.connection_genes:
-            if connection_gene.in_node == node_gene.innovation_number or connection_gene.out_node == node_gene.innovation_number:
-                if connection_gene.in_node not in in_nodes:
-                    in_nodes.append(connection_gene.in_node)
-                elif connection_gene.out_node not in out_nodes:
-                    out_nodes.append(connection_gene.out_node)
+    #     # remove connection genes
+    #     # save the in and out node of the connection gene
+    #     in_nodes = []
+    #     out_nodes = []
+    #     for connection_gene in self.connection_genes:
+    #         if connection_gene.in_node == node_gene.innovation_number or connection_gene.out_node == node_gene.innovation_number:
+    #             if connection_gene.in_node not in in_nodes:
+    #                 in_nodes.append(connection_gene.in_node)
+    #             elif connection_gene.out_node not in out_nodes:
+    #                 out_nodes.append(connection_gene.out_node)
                     
-                self.connection_genes.remove(connection_gene)
-                del self.connection_genes_dict[connection_gene.innovation_number]
+    #             self.connection_genes.remove(connection_gene)
+    #             del self.connection_genes_dict[connection_gene.innovation_number]
         
-        # enable previous connection genes
-        for connection_gene in self.connection_genes:
-            if connection_gene.in_node in in_nodes and connection_gene.out_node in out_nodes:
-                connection_gene.is_disabled = False
+    #     # enable previous connection genes
+    #     for connection_gene in self.connection_genes:
+    #         if connection_gene.in_node in in_nodes and connection_gene.out_node in out_nodes:
+    #             connection_gene.is_disabled = False
     
     def remove_connection(self):
         # select a random connection gene
@@ -457,30 +463,20 @@ class NeuralNetwork(torch.nn.Module):
                     print(' '*i*6+ 'src:', src_node, 'level:',self.genotype.node_gene_history.node_levels[src_node],'weight:', self.connections_per_level[level][node][src_node].weight.data)
     
     def forward(self, x:Dict[int, float]):
-        
+        x = deepcopy(x)
         with torch.no_grad():
             node_repr = x 
             for level in self.sorted_levels:
                 for node in self.connections_per_level[level]:
                     input = torch.tensor([0.0])
                     for src_node in self.connections_per_level[level][node]:
-                        try:
-                            input += self.connections_per_level[level][node][src_node](node_repr[src_node])
-                        except KeyError:
-                            print('KeyError')
-                            print(node_repr)
-                            print(src_node)
-                            print(node)
-                            print(self.connections_per_level)
-                            print(self.connections_per_level[level])
-                            print(self.connections_per_level[level][node])
-                            print(self.connections_per_level[level][node][src_node])
-                            
-                            
-                            
+                        if src_node not in node_repr:
+                            continue # this happens if connections in previous layers are disabled, such that the following node has no input
+                        input += self.connections_per_level[level][node][src_node](node_repr[src_node])
                             
                     node_repr[node] = sigmoid(input)
-            
+            if len(self.sorted_levels) == 0: # It can happen that all connection genes are disabled
+                return None
             return node_repr[list(self.connections_per_level[self.sorted_levels[-1]].keys())[0]]
 
 # nn = NeuralNetwork(genotype1)
@@ -551,10 +547,13 @@ def evolve_once(features, target,
             continue
         
         adjusted_fitnesses = []
+        fitnesses = []
+        genotype_size = []
         for genotype in sp.genotypes:
             
             network = NeuralNetwork(genotype)
             fitness = fitness_function(network, features, target)
+
             fitness = fitness.item()
             
             if fitness>=stop_at_fitness:
@@ -564,7 +563,8 @@ def evolve_once(features, target,
                 stop_marker = True
                 
             adjusted_fitnesses.append(fitness/len(sp.genotypes))
-        
+            fitnesses.append(fitness)
+            genotype_size.append(len(genotype.connection_genes))
         
         
         # don't allow reproduction if no fitness improvement for 15 generations
@@ -590,7 +590,7 @@ def evolve_once(features, target,
         # sort by fitness
         fit_individuals = sorted(fit_individuals, key=lambda x: x[1], reverse=False)
         top_species_adjusted_fitness.append(fit_individuals)
-        print('Species:', i, 'fitness:', sum(adjusted_fitnesses), 'best fitness:', max(adjusted_fitnesses))
+        print('Species:', i, 'mean fitness:', np.mean(fitnesses), 'best fitness:', max(adjusted_fitnesses)*len(sp.genotypes), 'average_connection_genes:', np.mean(genotype_size))   
         
     # sum over connection_genes
     # for sp in species_with_increased_fitness_last15gens:
@@ -687,22 +687,28 @@ def evolve(features, target, fitness_function, stop_at_fitness:float, n_generati
     for i in range(n_generations):
         species, found_solution, solutions = evolve_once(features, target, fitness_function, stop_at_fitness, species, fitness_survival_rate, interspecies_mate_rate, distance_delta, largest_species_linkadd_rate )
         if found_solution:
+            print('Found solution in generation', i)
+            for k,v in solutions.items():
+                print('Species:', k)
+                for genotype, fitness in v:
+                    print('Fitness:', fitness)
+                    print(genotype.print_genotype())
             return species, solutions
-        print(i)
 
     return species, None
 
 # %%
 def xor_fitness(network:NeuralNetwork, inputs, targets, print_fitness=False):
-    error = 0
+    #error = 0
+    fitness = 4
     for input, target in zip(inputs, targets):
         output = network.forward(input)
-        error += torch.abs(output - target)
-        if print_fitness:
-            print('target', target, 'output', output, 'error', error)
+        if output is None:
+            return torch.tensor([-np.inf])
+        #error += torch.abs(output - target)
+        fitness -= (output - target)**2
     
    
-    fitness = (4 - error)**2
     return fitness
 
 # %%
@@ -783,6 +789,8 @@ len(genotypes)
 # %%
 import random 
 random.seed(14)
+# np random seed
+np.random.seed(14)
 
 initial_species = Species(np.random.choice(genotypes), genotypes, distance_delta)
 
@@ -790,7 +798,7 @@ evolved_species, solutions = evolve(
     features=inputs, 
     target=targets, 
     fitness_function=xor_fitness, 
-    stop_at_fitness=16, 
+    stop_at_fitness=3.8, 
     n_generations=1000,
     species=[initial_species], 
     fitness_survival_rate=fitness_survival_rate, 
@@ -801,67 +809,4 @@ evolved_species, solutions = evolve(
     
 )
 
-
-# %%
-solutions
-
-# %%
-nn= NeuralNetwork(solutions[0][0][0])
-fitness = xor_fitness(nn, inputs, targets, print_fitness=True)
-
-# %%
-solutions
-
-# %%
-len(evolved_species[0].genotypes)
-
-# %%
-evolved_species[0].genotypes[2].print_genotype()
-
-# %%
-np.cumsum([0] + proportions)
-
-# %%
-import numpy as np
-a = np.array([1,2,3,345,1.3])
-np.argsort(a)
-
-# %%
-
-
-# %%
-
-
-# %%
-xor_fitness(networks[0], inputs, targets)
-
-# %%
-fitness = 0
-best_genotype = None
-for _ in range(10000):
-    
-    connection_genes = [
-        Connection_Gene(0, 3, np.random.normal(), False, connection_gene_history), # bias
-        Connection_Gene(1, 3, np.random.normal(), False, connection_gene_history), # input 1 
-        Connection_Gene(2, 3, np.random.normal(), False, connection_gene_history), # input 2
-    ]
-    
-    genotype = Genotype(node_genes, connection_genes, node_gene_history, connection_gene_history, mutate_weight_prob, mutate_weight_perturb, mutate_weight_random, mutate_add_node_prob, mutate_add_node_prob_large_pop, mutate_add_link_prob)
-    genotype.mutate()
-    genotype.mutate()
-    genotype.mutate()
-    genotype.mutate()
-    temp_fitness = xor_fitness(NeuralNetwork(genotype), inputs, targets)
-    if temp_fitness > fitness:
-        fitness = temp_fitness
-        best_genotype = genotype
-        print('===== new best fitness', fitness)
-        xor_fitness(NeuralNetwork(genotype), inputs, targets, print_fitness=True)
-
-# %%
-genotype1.print_genotype()
-
-# %%
-networks[2].print_nn()
-
-
+print(solutions)
