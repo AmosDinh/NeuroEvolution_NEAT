@@ -79,6 +79,17 @@ targets = [
 len(genotypes)
 
 # %%
+def xor_fitness(network:NeuralNetwork, inputs, targets, print_fitness=False):
+    #error = 0
+    fitness = 4
+    for input, target in zip(inputs, targets):
+        output = network.forward(input)[0]
+        if output is None:
+            return torch.tensor([0]) # if network has no connected nodes (all are disabled)
+        fitness -= (output - target)**2
+    
+   
+    return fitness
 
 initial_species = Species(np.random.choice(genotypes), genotypes, distance_delta)
 

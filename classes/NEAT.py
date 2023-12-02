@@ -129,7 +129,7 @@ class Connection_Gene:
 class Genotype:
     def __init__(self, node_genes, connection_genes,
                  node_gene_history:Node_Gene_History, connection_gene_history:Connection_Gene_History,
-                 mutate_weight_prob, mutate_weight_perturb, mutate_weight_random, mutate_add_node_prob, mutate_add_link_prob, weight_magnitude
+                 mutate_weight_prob, mutate_weight_perturb, mutate_weight_random, mutate_add_node_prob, mutate_add_link_prob,mutate_remove_link_prob, weight_magnitude
                  ,c1, c2, c3
                  
                  ):
@@ -143,6 +143,7 @@ class Genotype:
         self.mutate_weight_random = mutate_weight_random
         self.mutate_add_node_prob = mutate_add_node_prob
         self.mutate_add_link_prob = mutate_add_link_prob
+        self.mutate_remove_link_prob = mutate_remove_link_prob
         self.node_genes_dict = {node_gene.innovation_number:node_gene for node_gene in self.node_genes}
         self.connection_genes_dict = {connection_gene.innovation_number:connection_gene for connection_gene in self.connection_genes}
         self.c1 = c1
@@ -165,7 +166,7 @@ class Genotype:
     def mutate(self, mutate_add_link_prob=None):
         if mutate_add_link_prob is None:
             mutate_add_link_prob = self.mutate_add_link_prob
-        
+        mutate_remove_link_prob = self.mutate_remove_link_prob
         # mutate weight
         # random boolean  mask
         mask = np.random.rand(len(self.connection_genes)) <= self.mutate_weight_prob
@@ -193,7 +194,7 @@ class Genotype:
         #     self.remove_node()
         
         # mutate remove link
-        if np.random.rand() < mutate_add_link_prob:
+        if np.random.rand() < mutate_remove_link_prob:
             self.remove_connection()
     
     # def remove_node(self):
@@ -355,7 +356,7 @@ class Genotype:
     def crossover(self, other, fitness_self, fitness_other):
         node_genes = self._crossover_genes(fitness_self, fitness_other, self.node_genes, other.node_genes)
         connection_genes = self._crossover_genes(fitness_self, fitness_other, self.connection_genes, other.connection_genes)
-        return Genotype(node_genes, connection_genes, self.node_gene_history, self.connection_gene_history, self.mutate_weight_prob, self.mutate_weight_perturb, self.mutate_weight_random, self.mutate_add_node_prob, self.mutate_add_link_prob, self.weight_magnitude, self.c1, self.c2, self.c3)
+        return Genotype(node_genes, connection_genes, self.node_gene_history, self.connection_gene_history, self.mutate_weight_prob, self.mutate_weight_perturb, self.mutate_weight_random, self.mutate_add_node_prob, self.mutate_add_link_prob,self.mutate_remove_link_prob, self.weight_magnitude, self.c1, self.c2, self.c3)
     
     
     def _distance(self, genes, genes_other):
@@ -474,7 +475,9 @@ class NeuralNetwork(torch.nn.Module):
                     node_repr[node] = sigmoid(input)
             if len(self.sorted_levels) == 0: # It can happen that all connection genes are disabled
                 return None
-            return node_repr[list(self.connections_per_level[self.sorted_levels[-1]].keys())[0]]
+            
+            sorted_output_nodes = sorted(self.connections_per_level[self.sorted_levels[-1]].keys())
+            return [node_repr[node] for node in sorted_output_nodes]
 
 # nn = NeuralNetwork(genotype1)
 # x = {0:torch.tensor([-1.0]),1:torch.tensor([0.3])}
@@ -492,9 +495,11 @@ class Species:
         self.genotypes = genotypes
         self.best_fitness = -np.inf
         self.last_best_fitness_generation = 0
+        self.average_distance = []
 
     def add_to_genotype(self, genotype):
         distance = self.representative.distance(genotype)
+        self.average_distance.append(distance)
         if distance < self.distance_delta:
             self.genotypes.append(genotype)
             return True 
@@ -518,12 +523,20 @@ def get_proportional_bins(proportions, n_bins):
             bins[index] += 1
     
     return bins
+from multiprocessing import Pool
+from multiprocessing.pool import ThreadPool
 
+from functools import partial
 def evolve_once(features, target, 
                 fitness_function, stop_at_fitness:float, 
                 species:List[Species],fitness_survival_rate, interspecies_mate_rate, distance_delta,
                 largest_species_linkadd_rate,
-                eliminate_species_after_n_generations # if no improvement 
+                eliminate_species_after_n_generations, # if no improvement 
+                run_folder=None,
+                generation_number=None,
+                elitism=False,
+                n_workers=1,
+                gymnasium_env=None
                 ):
     
     Node_Gene_History = species[0].representative.node_gene_history
@@ -534,12 +547,15 @@ def evolve_once(features, target,
     
     #top_species_fitness = []
     top_species_adjusted_fitness = []
-    species_total_adjusted_fitness = []
+    #species_total_adjusted_fitness = []
     
     fittest_networks = {}
 
     species_with_increased_fitness_last15gens = []
     stop_marker = False
+    global_max_fitness = -np.inf
+    global_best_genome = (None, None)
+    global_min_fitness = np.inf 
     for i, sp in enumerate(species):
         if len(sp.genotypes) == 0:
             continue
@@ -547,12 +563,18 @@ def evolve_once(features, target,
         adjusted_fitnesses = []
         fitnesses = []
         genotype_size = []
-        for genotype in sp.genotypes:
-            
-            network = NeuralNetwork(genotype)
-            fitness = fitness_function(network, features, target)
+        start = datetime.now()
+        with Pool(n_workers) as p:
+            fitnesses = p.map(partial(fitness_function, inputs=features, targets=target), zip(sp.genotypes, gymnasium_env[:len(sp.genotypes)]))
 
+        for fitness, genotype in zip(fitnesses, sp.genotypes):
             fitness = fitness.item()
+            if fitness>global_max_fitness:
+                global_max_fitness = fitness
+                global_best_genome = (i, genotype)
+            
+            if fitness<global_min_fitness:
+                global_min_fitness=fitness
             
             if fitness>=stop_at_fitness:
                 if i not in fittest_networks:
@@ -563,8 +585,10 @@ def evolve_once(features, target,
             adjusted_fitnesses.append(fitness/len(sp.genotypes))
             fitnesses.append(fitness)
             genotype_size.append(len(genotype.connection_genes))
+        end = datetime.now()
         
         
+        print('Fitness calculation time:', end-start)
         # don't allow reproduction if no fitness improvement for n generations
         
         max_fitness = max(adjusted_fitnesses)
@@ -581,27 +605,44 @@ def evolve_once(features, target,
         
         
         
-        species_total_adjusted_fitness.append(sum(adjusted_fitnesses))
+        #species_total_adjusted_fitness.append(sum(adjusted_fitnesses))
         mask = np.argsort(adjusted_fitnesses)
         top_n_fitness_indices = mask[-int(fitness_survival_rate*len(adjusted_fitnesses)):]
         fit_individuals = [(genotype, fitness) for genotype, fitness in zip(np.array(sp.genotypes)[top_n_fitness_indices], np.array(adjusted_fitnesses)[top_n_fitness_indices])]
         # sort by fitness
         fit_individuals = sorted(fit_individuals, key=lambda x: x[1], reverse=False)
         top_species_adjusted_fitness.append(fit_individuals)
-        print('Species:', i, 'mean fitness:', np.mean(fitnesses), 'best fitness:', max(adjusted_fitnesses)*len(sp.genotypes), 'average_connection_genes:', np.mean(genotype_size))   
+        print(generation_number, 'Species:', i, 'mean fitness:', np.mean(fitnesses), 'best fitness:', max(adjusted_fitnesses)*len(sp.genotypes), 'worst fitness', min(adjusted_fitnesses)*len(sp.genotypes),  'average_connection_genes:', np.mean(genotype_size))   
         
+        if run_folder is not None: #  and generation_number%10==0:
+            with open(run_folder+f'/fitness_{generation_number}.txt', 'a+') as f:
+                f.write('Species: '+str(i)+' mean fitness: '+str(np.mean(fitnesses))+' best fitness: '+str(max(adjusted_fitnesses)*len(sp.genotypes))+' average_connection_genes: '+str(np.mean(genotype_size))+'\n')
     
+    if run_folder is not None:# and generation_number%10==0:
+        # save species as torch pt
+        torch.save(species, run_folder+f'/species_{generation_number}.pt')
+            
+            
     if stop_marker:
+        if run_folder is not None:
+            torch.save(species, run_folder+f'/species_{generation_number}.pt')
+            torch.save(fittest_networks, run_folder+f'/solutions_{generation_number}.pt')
         return species, True, fittest_networks
     
     total_offsprings = sum([len(sp.genotypes) for sp in species])
+    
+    # fitnesses to positive range:
+    # and SQUARE fitness
+    top_species_adjusted_fitness = [[ (genotype,((fitness-global_min_fitness)/(global_max_fitness-global_min_fitness))**2) for (genotype, fitness) in sp] for sp in top_species_adjusted_fitness ]
+    species_total_adjusted_fitness = [ sum([f for (_,f) in sp]) for sp in top_species_adjusted_fitness]
+    
     proportions = np.array([species_total_adjusted_fitness[i]/sum(species_total_adjusted_fitness) for i in range(len(species_total_adjusted_fitness))])
 
     # inner- and interspecies mating proportions
     inter_species_number_of_offsprings = get_proportional_bins(proportions, total_offsprings)
     inner_species_number_of_offsprings_probabilities = []
     for fit_individuals ,no_offsprings in zip(top_species_adjusted_fitness, inter_species_number_of_offsprings):
-        fitnesses = np.array([fitness for _, fitness in fit_individuals])
+        fitnesses = np.array([(fitness-global_min_fitness)/(global_max_fitness-global_min_fitness) for _, fitness in fit_individuals])
         inner_species_number_of_offsprings_probabilities.append([fitness/sum(fitnesses) for fitness in fitnesses])
     
     new_genotypes = []
@@ -630,12 +671,20 @@ def evolve_once(features, target,
     largest_species[np.argmax([len(sp.genotypes) for sp in species_with_increased_fitness_last15gens])] = True
     # innerspecies mating
     # we implement it using probablitlies to select parents
-    for fit_individuals, no_offsprings, probabilities, is_largest_species in zip(top_species_adjusted_fitness, inter_species_number_of_offsprings, inner_species_number_of_offsprings_probabilities,largest_species):
+    for species_index, (fit_individuals, no_offsprings, probabilities, is_largest_species) in enumerate(zip(top_species_adjusted_fitness, inter_species_number_of_offsprings, inner_species_number_of_offsprings_probabilities,largest_species)):
         fit_individuals = [genotype for genotype, _ in fit_individuals]
         
+        if species_index == global_best_genome[0] and elitism: 
+            # if the species contains the best genome, we add it to the offsprings without mutation
+            no_offsprings -= 1
+            new_genotypes.append(global_best_genome[1])
+            
         # 25% of offsprings are without crossover
         without_crossover = int(0.25 * no_offsprings)
+        
         for i in range(no_offsprings):
+            
+            
             # 25% of offsprings are without crossover
             if i<=without_crossover:
                 parent1 = np.random.choice(fit_individuals, 1, replace=False, p=probabilities)[0]
@@ -671,11 +720,19 @@ def evolve_once(features, target,
         if not added:
             new_species.append(Species(genotype, [genotype], distance_delta))
     
+    for i, sp in enumerate(new_species):
+        print(i, 'average distance', np.mean(sp.average_distance))
+        sp.average_distance = []
+    
     return new_species, False, None
+
+import os 
+def evolve(features, target, fitness_function, stop_at_fitness:float, n_generations, species:Species, fitness_survival_rate, interspecies_mate_rate, distance_delta, largest_species_linkadd_rate, eliminate_species_after_n_generations, run_folder=None, elitism=False, n_workers=1, gymnasium_env=None):
+    if run_folder is not None:
+        os.makedirs(run_folder)
         
-def evolve(features, target, fitness_function, stop_at_fitness:float, n_generations, species:Species, fitness_survival_rate, interspecies_mate_rate, distance_delta, largest_species_linkadd_rate, eliminate_species_after_n_generations):
     for i in range(n_generations):
-        species, found_solution, solutions = evolve_once(features, target, fitness_function, stop_at_fitness, species, fitness_survival_rate, interspecies_mate_rate, distance_delta, largest_species_linkadd_rate, eliminate_species_after_n_generations )
+        species, found_solution, solutions = evolve_once(features, target, fitness_function, stop_at_fitness, species, fitness_survival_rate, interspecies_mate_rate, distance_delta, largest_species_linkadd_rate, eliminate_species_after_n_generations, run_folder, i, elitism, n_workers, gymnasium_env)
         if found_solution:
             print('Found solution in generation', i)
             for k,v in solutions.items():
@@ -692,7 +749,7 @@ def xor_fitness(network:NeuralNetwork, inputs, targets, print_fitness=False):
     #error = 0
     fitness = 4
     for input, target in zip(inputs, targets):
-        output = network.forward(input)
+        output = network.forward(input)[0]
         if output is None:
             return torch.tensor([0]) # if network has no connected nodes (all are disabled)
         fitness -= (output - target)**2
@@ -726,6 +783,7 @@ if __name__ == '__main__':
     mutate_add_node_prob = 0.02
     mutate_add_link_prob_large_pop = 0.08
     mutate_add_link_prob = 0.02
+    mutate_remove_link_prob = 0.02
 
     offspring_without_crossover = 0.25
     interspecies_mate_rate = 0.001
@@ -756,7 +814,7 @@ if __name__ == '__main__':
         
         genotype = Genotype(
             node_genes, connection_genes, node_gene_history, connection_gene_history, 
-            mutate_weight_prob, mutate_weight_perturb, mutate_weight_random, mutate_add_node_prob, mutate_add_link_prob, weight_magnitude,
+            mutate_weight_prob, mutate_weight_perturb, mutate_weight_random, mutate_add_node_prob, mutate_add_link_prob, mutate_remove_link_prob, weight_magnitude,
             c1, c2, c3)
         genotypes.append(genotype)
 
@@ -781,7 +839,8 @@ if __name__ == '__main__':
     len(genotypes)
 
     # %%
-
+    
+    
     initial_species = Species(np.random.choice(genotypes), genotypes, distance_delta)
 
     evolved_species, solutions = evolve(
@@ -796,7 +855,6 @@ if __name__ == '__main__':
         distance_delta=distance_delta,
         largest_species_linkadd_rate=mutate_add_link_prob_large_pop,
         eliminate_species_after_n_generations=20
-        
         
     )
 
