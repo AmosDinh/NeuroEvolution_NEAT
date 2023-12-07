@@ -17,7 +17,7 @@ n_networks = 150
 c1 = 1
 c2 = 1
 c3 = 0.5
-distance_delta = 2.5
+distance_delta = 3
 
 
 weight_magnitude = 1.5 # std of weight mutation
@@ -27,7 +27,7 @@ mutate_weight_perturb = 0.8
 mutate_weight_random = 1 - mutate_weight_perturb
 mutate_add_node_prob = 0.02
 mutate_remove_node_prob = 0.02
-mutate_add_link_prob_large_pop = 0.1
+mutate_add_link_prob_large_pop = 0.3
 mutate_add_link_prob = 0.3
 mutate_remove_link_prob = 0.3
 
@@ -54,10 +54,13 @@ for _ in range(n_networks):
         node_genes.append(Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=1, initial_node_id=i))
     
     connection_genes = []
-    for i in range(9):
-        for j in range(9,11):
-            connection_genes.append(Connection_Gene(i, j, np.random.normal(), False, connection_gene_history))
-    
+    #for i in range(9):
+    #    for j in range(9,11):
+     #       connection_genes.append(Connection_Gene(i, j, np.random.normal(), False, connection_gene_history))
+     
+    # initially only connect bias to output
+    connection_genes.append(Connection_Gene(0, 9, np.random.normal(), False, connection_gene_history))    
+    connection_genes.append(Connection_Gene(0, 10, np.random.normal(), False, connection_gene_history))    
     
     
     genotype = Genotype(

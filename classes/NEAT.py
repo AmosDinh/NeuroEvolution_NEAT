@@ -427,6 +427,7 @@ class NeuralNetwork(torch.nn.Module):
         self.connections_per_level = {}
         self.connections = {}
         
+        
         for connection_gene in [gene for gene in self.connection_genes if not gene.is_disabled]:
             self.connections[connection_gene.innovation_number] = torch.nn.Linear(1, 1, bias=False)
             # specify weight
@@ -446,8 +447,9 @@ class NeuralNetwork(torch.nn.Module):
             self.connections_per_level[dst_node_level][dst_node][src_node] = self.connections[connection_gene.innovation_number]
         
        
-        
-            
+        dst_level = max([self.genotype.node_gene_history.node_levels[node.innovation_number] for node in self.genotype.node_genes])
+        self.dst_level_nodes = [node.innovation_number for node in self.genotype.node_genes if self.genotype.node_gene_history.node_levels[node.innovation_number] == dst_level]
+        self.dst_level_nodes = sorted(self.dst_level_nodes)
         self.sorted_levels = sorted(self.connections_per_level.keys())               
     
     
@@ -465,6 +467,9 @@ class NeuralNetwork(torch.nn.Module):
         x = deepcopy(x)
         with torch.no_grad():
             node_repr = x 
+            for node in self.dst_level_nodes:
+                node_repr[node] = torch.tensor([0.0]) # can happen that dst nodes have no input 
+                
             for level in self.sorted_levels:
                 for node in self.connections_per_level[level]:
                     input = torch.tensor([0.0])
@@ -474,10 +479,8 @@ class NeuralNetwork(torch.nn.Module):
                         input += self.connections_per_level[level][node][src_node](node_repr[src_node])
                             
                     node_repr[node] = sigmoid(input)
-            if len(self.sorted_levels) == 0: # It can happen that all connection genes are disabled
-                return None
-            
-            sorted_output_nodes = sorted(self.connections_per_level[self.sorted_levels[-1]].keys())
+                    
+            sorted_output_nodes = sorted(self.dst_level_nodes)
             return [node_repr[node] for node in sorted_output_nodes]
 
 # nn = NeuralNetwork(genotype1)
