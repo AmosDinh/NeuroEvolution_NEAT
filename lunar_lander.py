@@ -10,27 +10,28 @@ np.random.seed(14)
 
 
 
-n_networks = 150
+n_networks = 200
 
 
 # Fitness:
 c1 = 1
 c2 = 1
-c3 = 0.4
-distance_delta = 3
+c3 = 0.5
+distance_delta = 2
 
 
-weight_magnitude = 0.5 # std of weight mutation
+weight_magnitude = 1.5 # std of weight mutation
 # Mutation
 mutate_weight_prob = 0.8
 mutate_weight_perturb = 0.8
 mutate_weight_random = 1 - mutate_weight_perturb
 mutate_add_node_prob = 0.02
-mutate_add_link_prob_large_pop = 0.5
-mutate_add_link_prob = 0.5
-mutate_remove_link_prob = 0.5
+mutate_remove_node_prob = 0.02
+mutate_add_link_prob_large_pop = 0.3
+mutate_add_link_prob = 0.3
+mutate_remove_link_prob = 0.3
 
-offspring_without_crossover = 0.25
+offspring_without_crossover = 0.05
 interspecies_mate_rate = 0.001
 
 fitness_survival_rate = 0.2
@@ -61,7 +62,7 @@ for _ in range(n_networks):
     
     genotype = Genotype(
         node_genes, connection_genes, node_gene_history, connection_gene_history, 
-        mutate_weight_prob, mutate_weight_perturb, mutate_weight_random, mutate_add_node_prob, mutate_add_link_prob,mutate_remove_link_prob, weight_magnitude,
+        mutate_weight_prob, mutate_weight_perturb, mutate_weight_random, mutate_add_node_prob,mutate_remove_node_prob, mutate_add_link_prob,mutate_remove_link_prob, weight_magnitude,
         c1, c2, c3)
     genotypes.append(genotype)
 
@@ -83,10 +84,12 @@ def lunar_fitness(genotype_and_env, inputs, targets):
     network = NeuralNetwork(genotype) 
     fitness = 0
  
-    observation, info = env.reset()
-    terminated, truncated = False, False
-    num_tries = 4
+    
+    
+    num_tries = 5
     for _ in range(num_tries):
+        observation, info = env.reset()
+        terminated, truncated = False, False
         while not terminated and not truncated:
             input = {
                 0:torch.tensor([1.0]),# bias

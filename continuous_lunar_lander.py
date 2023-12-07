@@ -12,10 +12,12 @@ np.random.seed(14)
 
 n_networks = 150
 
+
+# Fitness:
 c1 = 1
 c2 = 1
 c3 = 0.5
-distance_delta = 3
+distance_delta = 2.5
 
 
 weight_magnitude = 1.5 # std of weight mutation
@@ -25,7 +27,7 @@ mutate_weight_perturb = 0.8
 mutate_weight_random = 1 - mutate_weight_perturb
 mutate_add_node_prob = 0.02
 mutate_remove_node_prob = 0.02
-mutate_add_link_prob_large_pop = 0.3
+mutate_add_link_prob_large_pop = 0.1
 mutate_add_link_prob = 0.3
 mutate_remove_link_prob = 0.3
 
@@ -42,21 +44,18 @@ connection_gene_history = Connection_Gene_History()
 genotypes = []
 
 
-observation_space = 8 + 1
-action_space = 4
-
 for _ in range(n_networks):
     
     node_genes = []
-    for i in range(observation_space):
+    for i in range(9):
         node_genes.append(Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=0, initial_node_id=i))
     
-    for i in range(observation_space,observation_space+action_space):
+    for i in range(9,11):
         node_genes.append(Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=1, initial_node_id=i))
     
     connection_genes = []
-    for i in range(observation_space):
-        for j in range(observation_space,observation_space+action_space):
+    for i in range(9):
+        for j in range(9,11):
             connection_genes.append(Connection_Gene(i, j, np.random.normal(), False, connection_gene_history))
     
     
@@ -73,39 +72,46 @@ for _ in range(n_networks):
 
 
 import gymnasium as gym
+#env = gym.make("LunarLander-v2")
 
 
 
 
 
-def fitness_f(genotype_and_env, inputs, targets):
+def lunar_fitness(genotype_and_env, inputs, targets):
     #error = 0
     genotype, env = genotype_and_env
     network = NeuralNetwork(genotype) 
     fitness = 0
+ 
     
     
-    num_tries = 1
+    num_tries = 5
     for _ in range(num_tries):
         observation, info = env.reset()
         terminated, truncated = False, False
         while not terminated and not truncated:
             input = {
                 0:torch.tensor([1.0]),# bias
+                1:torch.tensor([observation[0]]),
+                2:torch.tensor([observation[1]]),
+                3:torch.tensor([observation[2]]),
+                4:torch.tensor([observation[3]]), 
+                5:torch.tensor([observation[4]]),
+                6:torch.tensor([observation[5]]),
+                7:torch.tensor([observation[6]]),
+                8:torch.tensor([observation[7]]), 
             }
-            for i,o in enumerate(observation):
-                input[i+1] = torch.tensor([o])
-            
             actions = network.forward(input)
             actions = torch.tensor(actions)
-            # sigmoid to tanh
             actions = 2*actions - 1
-            # to python list
-            action = actions.tolist()
-            observation, reward, terminated, truncated, info = env.step(action)
+            actions = actions.tolist()
+            observation, reward, terminated, truncated, info = env.step(actions)
             fitness += reward
-    
-    return fitness/num_tries
+            
+    fitness /= num_tries
+    env.close()
+    return fitness
 
 
 initial_species = Species(np.random.choice(genotypes), genotypes, distance_delta)
@@ -114,13 +120,13 @@ initial_species = Species(np.random.choice(genotypes), genotypes, distance_delta
 import os
 import datetime 
 now = datetime.datetime.now()
-folder = os.path.join('runs', 'bipedalwalker', str(now))
+folder = os.path.join('runs', 'continuous_lunar_lander', str(now))
     
 evolved_species, solutions = evolve(
     features=None, 
     target=None, 
-    fitness_function=fitness_f, 
-    stop_at_fitness=1900, 
+    fitness_function=lunar_fitness, 
+    stop_at_fitness=1000, 
     n_generations=10000,
     species=[initial_species], 
     fitness_survival_rate=fitness_survival_rate, 
@@ -130,7 +136,7 @@ evolved_species, solutions = evolve(
     eliminate_species_after_n_generations=20,
     run_folder=folder,
     n_workers=16,
-    gymnasium_env=[gym.make( "BipedalWalker-v3") for _ in range(n_networks)],
+    gymnasium_env=[gym.make( "LunarLander-v2",continuous=True) for _ in range(n_networks)],
     elitism=True
     
 )

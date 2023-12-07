@@ -129,7 +129,7 @@ class Connection_Gene:
 class Genotype:
     def __init__(self, node_genes, connection_genes,
                  node_gene_history:Node_Gene_History, connection_gene_history:Connection_Gene_History,
-                 mutate_weight_prob, mutate_weight_perturb, mutate_weight_random, mutate_add_node_prob, mutate_add_link_prob,mutate_remove_link_prob, weight_magnitude
+                 mutate_weight_prob, mutate_weight_perturb, mutate_weight_random, mutate_add_node_prob,mutate_remove_node_prob, mutate_add_link_prob,mutate_remove_link_prob, weight_magnitude
                  ,c1, c2, c3
                  
                  ):
@@ -142,6 +142,7 @@ class Genotype:
         self.mutate_weight_perturb = mutate_weight_perturb
         self.mutate_weight_random = mutate_weight_random
         self.mutate_add_node_prob = mutate_add_node_prob
+        self.mutate_remove_node_prob = mutate_remove_node_prob
         self.mutate_add_link_prob = mutate_add_link_prob
         self.mutate_remove_link_prob = mutate_remove_link_prob
         self.node_genes_dict = {node_gene.innovation_number:node_gene for node_gene in self.node_genes}
@@ -190,44 +191,44 @@ class Genotype:
             
         # # mutate remove node
         # technically we dont need it, since removing links is enough
-        # if np.random.rand() < self.mutate_add_node_prob*0.6:
-        #     self.remove_node()
+        if np.random.rand() < self.mutate_remove_node_prob:
+            self.remove_node()
         
         # mutate remove link
         if np.random.rand() < mutate_remove_link_prob:
             self.remove_connection()
     
-    # def remove_node(self):
-    #     # select a random node gene
-    #     if len(self.node_genes) == 0:
-    #         return
-    #     candidate_node_genes = []
-    #     for gene in self.node_genes:
-    #         if gene.innovation_number not in [0,1,2,3]:
-    #             candidate_node_genes.append(gene)
-                
-    #     node_gene = np.random.choice(candidate_node_genes)
-    #     self.node_genes.remove(node_gene)
-    #     del self.node_genes_dict[node_gene.innovation_number]
+    def remove_node(self):
+        # select a random node gene
+        if len(self.node_genes) == 0:
+            return
         
-    #     # remove connection genes
-    #     # save the in and out node of the connection gene
-    #     in_nodes = []
-    #     out_nodes = []
-    #     for connection_gene in self.connection_genes:
-    #         if connection_gene.in_node == node_gene.innovation_number or connection_gene.out_node == node_gene.innovation_number:
-    #             if connection_gene.in_node not in in_nodes:
-    #                 in_nodes.append(connection_gene.in_node)
-    #             elif connection_gene.out_node not in out_nodes:
-    #                 out_nodes.append(connection_gene.out_node)
+        src_level = 0
+        dst_level = max(self.node_gene_history.node_levels.values())
+        candidate_node_genes = [gene for gene in self.node_genes if self.node_gene_history.node_levels[gene.innovation_number] != src_level and self.node_gene_history.node_levels[gene.innovation_number] != dst_level]
+        if len(candidate_node_genes) == 0:
+            return
+        node_gene = np.random.choice(candidate_node_genes)
+        self.node_genes.remove(node_gene)
+        del self.node_genes_dict[node_gene.innovation_number]
+        # remove connection genes
+        # save the in and out node of the connection gene
+        # in_nodes = []
+        # out_nodes = []
+        for connection_gene in self.connection_genes:
+            if connection_gene.in_node == node_gene.innovation_number or connection_gene.out_node == node_gene.innovation_number:
+                # if connection_gene.in_node not in in_nodes:
+                #     in_nodes.append(connection_gene.in_node)
+                # elif connection_gene.out_node not in out_nodes:
+                #     out_nodes.append(connection_gene.out_node)
                     
-    #             self.connection_genes.remove(connection_gene)
-    #             del self.connection_genes_dict[connection_gene.innovation_number]
+                self.connection_genes.remove(connection_gene)
+                del self.connection_genes_dict[connection_gene.innovation_number]
         
-    #     # enable previous connection genes
-    #     for connection_gene in self.connection_genes:
-    #         if connection_gene.in_node in in_nodes and connection_gene.out_node in out_nodes:
-    #             connection_gene.is_disabled = False
+        # enable previous connection genes
+        # for connection_gene in self.connection_genes:
+        #     if connection_gene.in_node in in_nodes and connection_gene.out_node in out_nodes:
+        #         connection_gene.is_disabled = False
     
     def remove_connection(self):
         # select a random connection gene
@@ -356,7 +357,7 @@ class Genotype:
     def crossover(self, other, fitness_self, fitness_other):
         node_genes = self._crossover_genes(fitness_self, fitness_other, self.node_genes, other.node_genes)
         connection_genes = self._crossover_genes(fitness_self, fitness_other, self.connection_genes, other.connection_genes)
-        return Genotype(node_genes, connection_genes, self.node_gene_history, self.connection_gene_history, self.mutate_weight_prob, self.mutate_weight_perturb, self.mutate_weight_random, self.mutate_add_node_prob, self.mutate_add_link_prob,self.mutate_remove_link_prob, self.weight_magnitude, self.c1, self.c2, self.c3)
+        return Genotype(node_genes, connection_genes, self.node_gene_history, self.connection_gene_history, self.mutate_weight_prob, self.mutate_weight_perturb, self.mutate_weight_random, self.mutate_add_node_prob,self.mutate_remove_node_prob, self.mutate_add_link_prob,self.mutate_remove_link_prob, self.weight_magnitude, self.c1, self.c2, self.c3)
     
     
     def _distance(self, genes, genes_other):
@@ -680,7 +681,7 @@ def evolve_once(features, target,
             new_genotypes.append(global_best_genome[1])
             
         # 25% of offsprings are without crossover
-        without_crossover = int(0.25 * no_offsprings)
+        without_crossover = int(0 * no_offsprings)
         
         for i in range(no_offsprings):
             
@@ -759,103 +760,104 @@ def xor_fitness(network:NeuralNetwork, inputs, targets, print_fitness=False):
 
 # %%
 
-if __name__ == '__main__':
-    import random 
-    random.seed(14)
-    torch.manual_seed(14)
-    np.random.seed(14)
+# if __name__ == '__main__':
+#     import random 
+#     random.seed(14)
+#     torch.manual_seed(14)
+#     np.random.seed(14)
     
-    n_networks = 150
+#     n_networks = 150
     
 
-    # Fitness:
-    c1 = 1
-    c2 = 1
-    c3 = 0.4
-    distance_delta = 6
+#     # Fitness:
+#     c1 = 1
+#     c2 = 1
+#     c3 = 0.4
+#     distance_delta = 6
 
 
-    weight_magnitude = 2.5 # std of weight mutation
-    # Mutation
-    mutate_weight_prob = 0.8
-    mutate_weight_perturb = 0.8
-    mutate_weight_random = 1 - mutate_weight_perturb
-    mutate_add_node_prob = 0.02
-    mutate_add_link_prob_large_pop = 0.08
-    mutate_add_link_prob = 0.02
-    mutate_remove_link_prob = 0.02
+#     weight_magnitude = 2.5 # std of weight mutation
+#     # Mutation
+#     mutate_weight_prob = 0.8
+#     mutate_weight_perturb = 0.8
+#     mutate_weight_random = 1 - mutate_weight_perturb
+#     mutate_add_node_prob = 0.02
+#     mutate_remove_node_prob = 0.02
+#     mutate_add_link_prob_large_pop = 0.08
+#     mutate_add_link_prob = 0.02
+#     mutate_remove_link_prob = 0.02
 
-    offspring_without_crossover = 0.25
-    interspecies_mate_rate = 0.001
+#     offspring_without_crossover = 0.25
+#     interspecies_mate_rate = 0.001
 
-    fitness_survival_rate = 0.2
-    interspecies_mate_rate = 0.001
-
-
-    node_gene_history = Node_Gene_History()
-    connection_gene_history = Connection_Gene_History()
-
-    genotypes = []
+#     fitness_survival_rate = 0.2
+#     interspecies_mate_rate = 0.001
 
 
-    for _ in range(n_networks):
-        node_genes = [
-            Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=0, initial_node_id=0), 
-            Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=0, initial_node_id=1),
-            Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=0, initial_node_id=2),
-            Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=1, initial_node_id=3)
-        ]
+#     node_gene_history = Node_Gene_History()
+#     connection_gene_history = Connection_Gene_History()
+
+#     genotypes = []
+
+
+#     for _ in range(n_networks):
+#         node_genes = [
+#             Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=0, initial_node_id=0), 
+#             Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=0, initial_node_id=1),
+#             Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=0, initial_node_id=2),
+#             Node_Gene(None, None, node_gene_history, add_initial=True, add_initial_node_level=1, initial_node_id=3)
+#         ]
         
-        connection_genes = [
-            Connection_Gene(0, 3, np.random.normal(), False, connection_gene_history), # bias
-            Connection_Gene(1, 3, np.random.normal(), False, connection_gene_history), # input 1 
-            Connection_Gene(2, 3, np.random.normal(), False, connection_gene_history), # input 2
-        ]
+#         connection_genes = [
+#             Connection_Gene(0, 3, np.random.normal(), False, connection_gene_history), # bias
+#             Connection_Gene(1, 3, np.random.normal(), False, connection_gene_history), # input 1 
+#             Connection_Gene(2, 3, np.random.normal(), False, connection_gene_history), # input 2
+#         ]
         
-        genotype = Genotype(
-            node_genes, connection_genes, node_gene_history, connection_gene_history, 
-            mutate_weight_prob, mutate_weight_perturb, mutate_weight_random, mutate_add_node_prob, mutate_add_link_prob, mutate_remove_link_prob, weight_magnitude,
-            c1, c2, c3)
-        genotypes.append(genotype)
+#         genotype = Genotype(
+#             node_genes, connection_genes, node_gene_history, connection_gene_history, 
+#             mutate_weight_prob, mutate_weight_perturb, mutate_weight_random, mutate_add_node_prob, mutate_remove_node_prob,  mutate_add_link_prob, mutate_remove_link_prob, weight_magnitude,
+#             c1, c2, c3)
+#         genotypes.append(genotype)
 
-    # %%
-    # xor
-    inputs = [
-        {0:torch.tensor([1.0]),1:torch.tensor([0.0]),2:torch.tensor([0.0])},
-        {0:torch.tensor([1.0]),1:torch.tensor([1.0]),2:torch.tensor([0.0])},
-        {0:torch.tensor([1.0]),1:torch.tensor([0.0]),2:torch.tensor([1.0])},
-        {0:torch.tensor([1.0]),1:torch.tensor([1.0]),2:torch.tensor([1.0])}
-        # xor:
-        # bias 1, 00, 01, 10, 11
-    ]
-    targets = [
-        torch.tensor([0.0]),
-        torch.tensor([1.0]),
-        torch.tensor([1.0]),
-        torch.tensor([0.0])
-    ]
+#     # %%
+#     # xor
+#     inputs = [
+#         {0:torch.tensor([1.0]),1:torch.tensor([0.0]),2:torch.tensor([0.0])},
+#         {0:torch.tensor([1.0]),1:torch.tensor([1.0]),2:torch.tensor([0.0])},
+#         {0:torch.tensor([1.0]),1:torch.tensor([0.0]),2:torch.tensor([1.0])},
+#         {0:torch.tensor([1.0]),1:torch.tensor([1.0]),2:torch.tensor([1.0])}
+#         # xor:
+#         # bias 1, 00, 01, 10, 11
+#     ]
+#     targets = [
+#         torch.tensor([0.0]),
+#         torch.tensor([1.0]),
+#         torch.tensor([1.0]),
+#         torch.tensor([0.0])
+#     ]
 
-    # %%
-    len(genotypes)
+#     # %%
+#     len(genotypes)
 
-    # %%
+#     # %%
     
     
-    initial_species = Species(np.random.choice(genotypes), genotypes, distance_delta)
+#     initial_species = Species(np.random.choice(genotypes), genotypes, distance_delta)
 
-    evolved_species, solutions = evolve(
-        features=inputs, 
-        target=targets, 
-        fitness_function=xor_fitness, 
-        stop_at_fitness=3.85, 
-        n_generations=1000,
-        species=[initial_species], 
-        fitness_survival_rate=fitness_survival_rate, 
-        interspecies_mate_rate=interspecies_mate_rate, 
-        distance_delta=distance_delta,
-        largest_species_linkadd_rate=mutate_add_link_prob_large_pop,
-        eliminate_species_after_n_generations=20
+#     evolved_species, solutions = evolve(
+#         features=inputs, 
+#         target=targets, 
+#         fitness_function=xor_fitness, 
+#         stop_at_fitness=3.85, 
+#         n_generations=1000,
+#         species=[initial_species], 
+#         fitness_survival_rate=fitness_survival_rate, 
+#         interspecies_mate_rate=interspecies_mate_rate, 
+#         distance_delta=distance_delta,
+#         largest_species_linkadd_rate=mutate_add_link_prob_large_pop,
+#         eliminate_species_after_n_generations=20
         
-    )
+#     )
 
-    print(solutions)
+#     print(solutions)

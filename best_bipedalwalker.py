@@ -1,6 +1,6 @@
 import torch 
 from classes.NEAT import *
-species = torch.load('runs/bipedalwalker/2023-12-01 21:53:14.232473/species_52.pt')
+species = torch.load('runs/bipedalwalker/2023-12-04 16:39:15.028425/species_174.pt')
 
 import gymnasium as gym
 env = gym.make("BipedalWalker-v3")
@@ -48,7 +48,7 @@ for genotype in tqdm(species[0].genotypes):
         best_genotype = genotype
 
 env = gym.make("BipedalWalker-v3", render_mode='human')
-print(max_fitness/4)
+print(max_fitness)
 while True:
     network = NeuralNetwork(genotype)
     fitness = fitness_f(network, None, None)
