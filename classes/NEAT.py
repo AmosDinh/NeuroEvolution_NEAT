@@ -560,6 +560,8 @@ def evolve_once(features, target,
     global_max_fitness = -np.inf
     global_best_genome = (None, None)
     global_min_fitness = np.inf 
+    save_fitnesses = {}
+    save_crossings = {}
     for i, sp in enumerate(species):
         if len(sp.genotypes) == 0:
             continue
@@ -571,6 +573,8 @@ def evolve_once(features, target,
         with Pool(n_workers) as p:
             fitnesses = p.map(partial(fitness_function, inputs=features, targets=target), zip(sp.genotypes, gymnasium_env[:len(sp.genotypes)]))
 
+        save_fitnesses[i] = fitnesses
+        
         for fitness, genotype in zip(fitnesses, sp.genotypes):
             fitness = fitness.item()
             if fitness>global_max_fitness:
@@ -699,7 +703,8 @@ def evolve_once(features, target,
                 parent2 = fit_individuals[0]
             else: # pick two parents
                 parent1, parent2 = np.random.choice(fit_individuals, 2, replace=False, p=probabilities)
-                
+            
+            save_crossings[i] = (parent1.innovation_number, parent2.innovation_number)
             new_genotype = parent1.crossover(parent2, 1, 1)
             # mutate
             if is_largest_species:
@@ -728,6 +733,9 @@ def evolve_once(features, target,
         print(i, 'average distance', np.mean(sp.average_distance))
         sp.average_distance = []
     
+    torch.save(save_fitnesses, run_folder+f'/fitness_perspecies_{generation_number}.pt')
+    torch.save(save_crossings, run_folder+f'/crossings_{generation_number}.pt')
+        
     return new_species, False, None
 
 import os 
