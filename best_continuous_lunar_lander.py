@@ -1,8 +1,27 @@
 import torch 
 from classes.NEAT import *
-#174
-#386
-species = torch.load('runs/continuous_lunar_lander/2023-12-04 15:32:36.222925/species_53.pt')
+species_id = 0
+run = 143
+# 2023-12-07 19:59:20.340927
+# run 10, species 1 first uses thrusters
+# run 12 species 0 first signs of steering
+# run 15 0, strategy to stay in the air long: no fuel efficiency
+# 1 explores dropping faster
+# run 30 species 2: happy little jumper
+# run = 80 # already good
+# 96
+
+# Folder: 2023-12-07 22:13:57.425933
+# 18, 0 starts to steer
+# 25, 2 strategy to rotate onto the goal
+# 27, 2 minimal thrust, 0 faster
+# 41, 2: almost like pid controller, 0 faster
+# 90: you can see 0 more accurate, but 1 can have room for improvement, it falls faster: less fuel needed
+# highest fitness: 125 species 1, 143 0
+species = torch.load(f'runs/continuous_lunar_lander/2023-12-07 22:13:57.425933/species_{run}.pt')
+fitnesses = torch.load(f'runs/continuous_lunar_lander/2023-12-07 22:13:57.425933/fitness_perspecies_{run}.pt')
+
+
 
 import gymnasium as gym
 import datetime
@@ -43,21 +62,13 @@ def lunar_fitness(genotype_and_env, inputs, targets):
 
 
 
-from tqdm.auto import tqdm 
-env = gym.make("LunarLander-v2")
-max_fitness = -np.inf
-best_genotype = None
+genotypes = species[species_id].genotypes
 
-n_workers = 8 
-gymnasium_env = [gym.make("LunarLander-v2",continuous=True) for _ in range(150)]
-genotypes = species[0].genotypes
-with Pool(n_workers) as p:
-    fitnesses = p.map(partial(lunar_fitness, inputs=None, targets=None), zip(genotypes, gymnasium_env[:len(genotypes)]))
-
-best_genotype = genotypes[np.argmax(fitnesses)]
-
-print(np.max(fitnesses))
+best_genotype = genotypes[np.argmax(fitnesses[species_id])]
 best_genotype.print_genotype()
+for species in fitnesses:
+    print(species, np.max(fitnesses[species]))
+
 env = gym.make("LunarLander-v2", render_mode='human',continuous=True)       
 env.reset() 
 while True:

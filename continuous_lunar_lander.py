@@ -12,12 +12,12 @@ np.random.seed(14)
 
 n_networks = 150
 
-
+ 
 # Fitness:
 c1 = 1
 c2 = 1
 c3 = 0.5
-distance_delta = 3
+distance_delta = 4
 
 
 weight_magnitude = 1.5 # std of weight mutation
@@ -25,8 +25,8 @@ weight_magnitude = 1.5 # std of weight mutation
 mutate_weight_prob = 0.8
 mutate_weight_perturb = 0.8
 mutate_weight_random = 1 - mutate_weight_perturb
-mutate_add_node_prob = 0.02
-mutate_remove_node_prob = 0.02
+mutate_add_node_prob = 0.3
+mutate_remove_node_prob = 0.3
 mutate_add_link_prob_large_pop = 0.3
 mutate_add_link_prob = 0.3
 mutate_remove_link_prob = 0.3

@@ -1,6 +1,6 @@
 import torch 
 from classes.NEAT import *
-species = torch.load('runs/bipedalwalker/2023-12-04 16:39:15.028425/species_174.pt')
+species = torch.load('runs/bipedalwalker/2023-12-04 16:39:15.028425/species_1.pt')
 
 import gymnasium as gym
 env = gym.make("BipedalWalker-v3")
@@ -33,7 +33,7 @@ def fitness_f(network:NeuralNetwork, inputs, targets, print_fitness=False):
 from tqdm.auto import tqdm 
 
 
-max_fitness = 0
+max_fitness = -10000
 best_genotype = None
 for genotype in tqdm(species[0].genotypes):
 
@@ -47,8 +47,15 @@ for genotype in tqdm(species[0].genotypes):
         max_fitness=average_fitness
         best_genotype = genotype
 
-env = gym.make("BipedalWalker-v3", render_mode='human')
-print(max_fitness)
-while True:
-    network = NeuralNetwork(genotype)
-    fitness = fitness_f(network, None, None)
+# env = gym.make("BipedalWalker-v3", render_mode='human')
+# print(max_fitness)
+# while True:
+#     network = NeuralNetwork(genotype)
+#     fitness = fitness_f(network, None, None)
+from gymnasium.wrappers import RecordVideo
+
+env = RecordVideo(gym.make("BipedalWalker-v3", render_mode='rgb_array')   , './video')     
+
+# while True:
+fitness = fitness_f(NeuralNetwork(best_genotype), None, None)
+env.close()

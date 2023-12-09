@@ -704,7 +704,7 @@ def evolve_once(features, target,
             else: # pick two parents
                 parent1, parent2 = np.random.choice(fit_individuals, 2, replace=False, p=probabilities)
             
-            save_crossings[i] = (parent1.innovation_number, parent2.innovation_number)
+            save_crossings[i] = (parent1, parent2)
             new_genotype = parent1.crossover(parent2, 1, 1)
             # mutate
             if is_largest_species:
