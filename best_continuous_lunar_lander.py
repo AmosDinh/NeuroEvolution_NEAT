@@ -1,7 +1,7 @@
 import torch 
 from classes.NEAT import *
 species_id = 0
-run = 143
+run = 237
 # 2023-12-07 19:59:20.340927
 # run 10, species 1 first uses thrusters
 # run 12 species 0 first signs of steering
@@ -18,8 +18,12 @@ run = 143
 # 41, 2: almost like pid controller, 0 faster
 # 90: you can see 0 more accurate, but 1 can have room for improvement, it falls faster: less fuel needed
 # highest fitness: 125 species 1, 143 0
-species = torch.load(f'runs/continuous_lunar_lander/2023-12-07 22:13:57.425933/species_{run}.pt')
-fitnesses = torch.load(f'runs/continuous_lunar_lander/2023-12-07 22:13:57.425933/fitness_perspecies_{run}.pt')
+
+# folder: 2023-12-09 18:30:12.850515
+# 237 species 0 is interesting, it does not look good but the "sidelands" have high fitness
+# because it lands fast and uses side thrusters instead of main thruster
+species = torch.load(f'runs/continuous_lunar_lander/2023-12-09 18:30:12.850515/species_{run}.pt')
+fitnesses = torch.load(f'runs/continuous_lunar_lander/2023-12-09 18:30:12.850515/fitness_perspecies_{run}.pt')
 
 
 
@@ -33,7 +37,7 @@ def lunar_fitness(genotype_and_env, inputs, targets):
 
 
 
-    num_tries = 4
+    num_tries = 1
     for _ in range(num_tries):
         observation, info = env.reset()
         terminated, truncated = False, False
@@ -73,3 +77,5 @@ env = gym.make("LunarLander-v2", render_mode='human',continuous=True)
 env.reset() 
 while True:
     fitness = lunar_fitness((best_genotype, env), None, None)
+    print(fitness)
+    

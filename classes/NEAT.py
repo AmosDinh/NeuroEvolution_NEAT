@@ -571,9 +571,12 @@ def evolve_once(features, target,
         genotype_size = []
         start = datetime.now()
         with Pool(n_workers) as p:
-            fitnesses = p.map(partial(fitness_function, inputs=features, targets=target), zip(sp.genotypes, gymnasium_env[:len(sp.genotypes)]))
-
-        save_fitnesses[i] = fitnesses
+            fitnesses_and_number = p.map(partial(fitness_function, inputs=features, targets=target), zip(np.arange(len(sp.genotypes)),sp.genotypes, gymnasium_env[:len(sp.genotypes)]))
+        
+        # sort by number
+        fitnesses_and_number = sorted(fitnesses_and_number, key=lambda x: x[1], reverse=False)
+        fitnesses = [fitness for fitness, _ in fitnesses_and_number]
+        save_fitnesses[i] = (fitnesses, sp.genotypes)
         
         for fitness, genotype in zip(fitnesses, sp.genotypes):
             fitness = fitness.item()
@@ -651,7 +654,6 @@ def evolve_once(features, target,
     inner_species_number_of_offsprings_probabilities = []
     for fit_individuals ,no_offsprings in zip(top_species_adjusted_fitness, inter_species_number_of_offsprings):
         fitnesses = np.array([(fitness-global_min_fitness)/(global_max_fitness-global_min_fitness) for _, fitness in fit_individuals])
-        inner_species_number_of_offsprings_probabilities.append([fitness/sum(fitnesses) for fitness in fitnesses])
     
     new_genotypes = []
     
@@ -704,14 +706,16 @@ def evolve_once(features, target,
             else: # pick two parents
                 parent1, parent2 = np.random.choice(fit_individuals, 2, replace=False, p=probabilities)
             
-            save_crossings[i] = (parent1, parent2)
             new_genotype = parent1.crossover(parent2, 1, 1)
+            genotype_before_mutation = deepcopy(new_genotype)
+            
             # mutate
             if is_largest_species:
                 new_genotype.mutate(mutate_add_link_prob=largest_species_linkadd_rate)
             else:
                 new_genotype.mutate()
             new_genotypes.append(new_genotype)
+            save_crossings[i] = {'parent1':parent1, 'parent2':parent2, 'offspring':new_genotype, 'offspring_before_mutation':genotype_before_mutation}
     
     # remove old genotypes, except reference genotype
     for sp in species:

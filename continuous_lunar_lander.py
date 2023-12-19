@@ -83,7 +83,7 @@ import gymnasium as gym
 
 def lunar_fitness(genotype_and_env, inputs, targets):
     #error = 0
-    genotype, env = genotype_and_env
+    number, genotype, env = genotype_and_env
     network = NeuralNetwork(genotype) 
     fitness = 0
  
@@ -114,7 +114,7 @@ def lunar_fitness(genotype_and_env, inputs, targets):
             
     fitness /= num_tries
     env.close()
-    return fitness
+    return fitness, number
 
 
 initial_species = Species(np.random.choice(genotypes), genotypes, distance_delta)
